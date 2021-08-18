@@ -1,4 +1,5 @@
-const { ApolloServer, gql } = require('apollo-server');
+// 4-1. 檢查有無認證 isAuthenticated
+const { ApolloServer, gql, ForbiddenError } = require('apollo-server');
 // ApolloServer: 讓我們啟動 server 的 class ，不但實作許多 GraphQL 功能也提供 web application 的功能 (背後使用 express)
 // gql: template literal tag, 讓你在 Javascript 中使用 GraphQL 語法
 
@@ -192,16 +193,19 @@ const createToken = ({ id, email, name }) => jwt.sign({ id, email, name }, SECRE
   expiresIn: '1d'
 });
 
+// 4-1. 檢查有無認證 isAuthenticated
+const isAuthenticated = resolverFunc => (parent, args, context) => {
+  if (!context.me) throw new ForbiddenError('Not logged in.');
+  return resolverFunc.apply(null, [parent, args, context]);
+};
+
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
 const resolvers = {
   // Query Type Resolver
   Query: {
     hello: () => "world",
     // 3-3. Context Setup
-    me: (root, args, { me }) => {
-      if (!me) throw new Error ('Plz Log In First');
-      return findUserByUserId(me.id)
-    },
+    me: isAuthenticated((parent, args, { me }) => findUserByUserId(me.id)),
     users: () => users,
     user: (root, { name }, context) => findUserByName(name),
     posts: () => posts,
@@ -219,8 +223,7 @@ const resolvers = {
   // Mutation Type Resolver
   // 3-3. Mutation 分開可能需要使用命名，否則在網頁 Demo 輸入會不知道要找哪個 Mutation，最終導致無結果出現
   Mutation: {
-    updateMyInfo: (parent, { input }, { me }) => {
-      if (!me) throw new Error ('Plz Log In First');
+    updateMyInfo: isAuthenticated((parent, { input }, { me }) => {
       // 過濾空值
       const data = ["name", "age"].reduce(
         (obj, key) => (input[key] ? { ...obj, [key]: input[key] } : obj),
@@ -228,9 +231,8 @@ const resolvers = {
       );
 
       return updateUserInfo(me.id, data);
-    },
-    addFriend: (parent, { userId }, { me: { id: meId } }) => {
-      if (!me) throw new Error ('Plz Log In First');
+    }),
+    addFriend: isAuthenticated((parent, { userId }, { me: { id: meId } }) => {
       const me = findUserByUserId(meId);
       if (me.friendIds.include(userId))
         throw new Error(`User ${userId} Already Friend.`);
@@ -242,14 +244,12 @@ const resolvers = {
       updateUserInfo(userId, { friendIds: friend.friendIds.concat(meId) });
 
       return newMe;
-    },
-    addPost: (parent, { input }, { me }) => {
-      if (!me) throw new Error ('Plz Log In First');
+    }),
+    addPost: isAuthenticated((parent, { input }, { me }) => {
       const { title, body } = input;
       return addPost({ authorId: me.id, title, body });
-    },
-    likePost: (parent, { postId }, { me }) => {
-      if (!me) throw new Error ('Plz Log In First');
+    }),
+    likePost: isAuthenticated((parent, { input }, { me }) => {
 
       const post = findPostByPostId(postId);
 
@@ -263,7 +263,7 @@ const resolvers = {
       return updatePost(postId, {
         likeGiverIds: post.likeGiverIds.filter(id => id === me.id)
       });
-    },
+    }),
     // 3-1. Register - Resolver
     signUp: async (root, { name, email, password }, context) => {
       // 1. 檢查不能有重複註冊 email
