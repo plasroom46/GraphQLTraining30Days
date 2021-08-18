@@ -2,7 +2,7 @@ const { ApolloServer, gql } = require('apollo-server');
 // ApolloServer: 讓我們啟動 server 的 class ，不但實作許多 GraphQL 功能也提供 web application 的功能 (背後使用 express)
 // gql: template literal tag, 讓你在 Javascript 中使用 GraphQL 語法
 
-// 2. Mock Data & Field Resolver
+// Mock Data & Field Resolver
 const meId = 1;
 const users = [
   {
@@ -88,7 +88,7 @@ const typeDefs = gql`
     "建立時間 (ISO 格式)"
     createdAt: String
   }
-  # 3-1. Query Type Schema
+  # Query Type Schema
   type Query {
     "測試用 Hello World"
     hello: String
@@ -104,7 +104,7 @@ const typeDefs = gql`
     post(id: ID!): Post
   }
 
-  # 4-1. Mutation Type Schema
+  # Mutation Type Schema
   input UpdateMyInfoInput {
     name: String
     age: Int
@@ -121,11 +121,26 @@ const typeDefs = gql`
     addPost(input: AddPostInput!): Post
     likePost(postId: ID!): Post
   }
+
+  # 3-1. Register - Schema
+  type Mutation {
+    "註冊。 email 與 passwrod 必填"
+    signUp(name: String, email: String!, password: String!): User
+  }
 `;
+
+// 3-1. Register - Resolver
+// 引入外部套件
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+// 定義 bcrypt 加密所需 saltRounds 次數
+const SALT_ROUNDS = 2;
+// 定義 jwt 所需 secret (可隨便打)
+const SECRET = 'just_a_random_secret';
 
 
 // helper functions
-// 2
 const filterPostsByUserId = userId =>
   posts.filter(post => userId === post.authorId);
 
@@ -134,11 +149,11 @@ const filterUsersByUserIds = userIds =>
   
 const findUserByUserId = userId => users.find(user => user.id === Number(userId));
 
-// 3-2. Query Type Resolver
+// Query Type Resolver
 const findUserByName = name => users.find(user => user.name === name);
 const findPostByPostId = postId => posts.find(post => post.id === Number(postId));
 
-// 4-2. Mutation Type Resolver
+// Mutation Type Resolver
 const updateUserInfo = (userId, data) =>
   Object.assign(findUserByUserId(userId), data);
 
@@ -155,10 +170,22 @@ const addPost = ({ authorId, title, body }) =>
 const updatePost = (postId, data) =>
   Object.assign(findPostByPostId(postId), data);
 
+// 3-1. Register - Resolver
+const hash = text => bcrypt.hash(text, SALT_ROUNDS);
+
+const addUser = ({ name, email, password }) => (
+  users[users.length] = {
+    id: users[users.length - 1].id + 1,
+    name,
+    email,
+    password
+  }
+);
+
 
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
 const resolvers = {
-  // 3-2. Query Type Resolver
+  // Query Type Resolver
   Query: {
     hello: () => "world",
     me: () => findUserByUserId(meId),
@@ -167,7 +194,6 @@ const resolvers = {
     posts: () => posts,
     post: (root, { id }, context) => findPostByPostId(id)
   },
-  // 2.
   User: {
     posts: (parent, args, context) => filterPostsByUserId(parent.id),
     friends: (parent, args, context) => filterUsersByUserIds(parent.friendIds || [])
@@ -177,7 +203,7 @@ const resolvers = {
     likeGivers: (parent, args, context) =>
       filterUsersByUserIds(parent.likeGiverIds)
   },
-  // 4-2. Mutation Type Resolver
+  // Mutation Type Resolver
   Mutation: {
     updateMyInfo: (parent, { input }, context) => {
       // 過濾空值
@@ -219,7 +245,18 @@ const resolvers = {
       return updatePost(postId, {
         likeGiverIds: post.likeGiverIds.filter(id => id === meId)
       });
-    }
+    },
+    // 3-1. Register - Resolver
+    signUp: async (root, { name, email, password }, context) => {
+      // 1. 檢查不能有重複註冊 email
+      const isUserEmailDuplicate = users.some(user => user.email === email);
+      if (isUserEmailDuplicate) throw new Error('User Email Duplicate');
+
+      // 2. 將 passwrod 加密再存進去。非常重要 !!
+      const hashedPassword = await hash(password, SALT_ROUNDS);
+      // 3. 建立新 user
+      return addUser({ name, email, password: hashedPassword });
+    },
   }
 };
 
