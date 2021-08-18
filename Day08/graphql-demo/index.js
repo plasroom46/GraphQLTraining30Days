@@ -91,10 +91,16 @@ const typeDefs = gql`
     user(name: String!): User
   }
 
+  # Input Object Type
+  input AddPostInput {
+    title: String!
+    content: String
+  }
+
   # Mutation 定義
   type Mutation {
     "新增貼文"
-    addPost(title: String!, content: String!): Post
+    addPost(input: AddPostInput!): Post
     "貼文按讚 (收回讚)"
     likePost(postId: ID!): Post
   }
@@ -175,8 +181,10 @@ const resolvers = {
     },
     // Mutation Type Resolver
     Mutation : {
+      // 需注意！args 打開後第一層為 input ，再進去一層才是 title, content
       addPost: (root, args, context) => {
-        const { title, content } = args;
+        const { input } = args;
+        const { title, content } = input;
         // 新增 post
         posts.push({
           id: posts.length + 1,
