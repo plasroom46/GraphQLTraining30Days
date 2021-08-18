@@ -3,7 +3,6 @@ const { ApolloServer, gql } = require('apollo-server');
 // gql: template literal tag, 讓你在 Javascript 中使用 GraphQL 語法
 
 // Mock Data & Field Resolver
-const meId = 1;
 const users = [
   {
     id: 1,
@@ -110,31 +109,29 @@ const typeDefs = gql`
     age: Int
   }
   
+  # 3-2. Login - Schema
+  type Token {
+    token: String!
+  }
+
   input AddPostInput {
     title: String!
     body: String
   }
   
+  # 3-3. Mutation 分開可能需要使用命名，否則在網頁 Demo 輸入會不知道要找哪個 Mutation，最終導致無結果出現
   type Mutation {
     updateMyInfo(input: UpdateMyInfoInput!): User
     addFriend(userId: ID!): User
     addPost(input: AddPostInput!): Post
     likePost(postId: ID!): Post
-  }
-  
-  # 3-2. Login - Schema
-  type Token {
-    token: String!
-  }
-  
-  type Mutation {
     # 3-1. Register - Schema
     "註冊。 email 與 passwrod 必填"
     signUp(name: String, email: String!, password: String!): User
     # 3-2. Login - Schema
     "登入"
     login (email: String!, password: String!): Token
-  }
+  } 
 `;
 
 // 3-1. Register - Resolver
@@ -200,7 +197,11 @@ const resolvers = {
   // Query Type Resolver
   Query: {
     hello: () => "world",
-    me: () => findUserByUserId(meId),
+    // 3-3. Context Setup
+    me: (root, args, { me }) => {
+      if (!me) throw new Error ('Plz Log In First');
+      return findUserByUserId(me.id)
+    },
     users: () => users,
     user: (root, { name }, context) => findUserByName(name),
     posts: () => posts,
@@ -216,17 +217,20 @@ const resolvers = {
       filterUsersByUserIds(parent.likeGiverIds)
   },
   // Mutation Type Resolver
+  // 3-3. Mutation 分開可能需要使用命名，否則在網頁 Demo 輸入會不知道要找哪個 Mutation，最終導致無結果出現
   Mutation: {
-    updateMyInfo: (parent, { input }, context) => {
+    updateMyInfo: (parent, { input }, { me }) => {
+      if (!me) throw new Error ('Plz Log In First');
       // 過濾空值
       const data = ["name", "age"].reduce(
         (obj, key) => (input[key] ? { ...obj, [key]: input[key] } : obj),
         {}
       );
 
-      return updateUserInfo(meId, data);
+      return updateUserInfo(me.id, data);
     },
-    addFriend: (parent, { userId }, context) => {
+    addFriend: (parent, { userId }, { me: { id: meId } }) => {
+      if (!me) throw new Error ('Plz Log In First');
       const me = findUserByUserId(meId);
       if (me.friendIds.include(userId))
         throw new Error(`User ${userId} Already Friend.`);
@@ -239,27 +243,27 @@ const resolvers = {
 
       return newMe;
     },
-    addPost: (parent, { input }, context) => {
+    addPost: (parent, { input }, { me }) => {
+      if (!me) throw new Error ('Plz Log In First');
       const { title, body } = input;
-      return addPost({ authorId: meId, title, body });
+      return addPost({ authorId: me.id, title, body });
     },
-    likePost: (parent, { postId }, context) => {
+    likePost: (parent, { postId }, { me }) => {
+      if (!me) throw new Error ('Plz Log In First');
+
       const post = findPostByPostId(postId);
 
       if (!post) throw new Error(`Post ${postId} Not Exists`);
 
       if (!post.likeGiverIds.includes(postId)) {
         return updatePost(postId, {
-          likeGiverIds: post.likeGiverIds.concat(meId)
+          likeGiverIds: post.likeGiverIds.concat(me.id)
         });
       }
-
       return updatePost(postId, {
-        likeGiverIds: post.likeGiverIds.filter(id => id === meId)
+        likeGiverIds: post.likeGiverIds.filter(id => id === me.id)
       });
     },
-  },
-  Mutation: {
     // 3-1. Register - Resolver
     signUp: async (root, { name, email, password }, context) => {
       // 1. 檢查不能有重複註冊 email
@@ -292,7 +296,25 @@ const server = new ApolloServer({
   // Schema 部分
   typeDefs,
   // Resolver 部分
-  resolvers
+  resolvers,
+
+  // 3-3. Context Setup
+  context: async ({ req }) => {
+    // 1. 取出
+    const token = req.headers['x-token'];
+    if (token) {
+      try {
+        // 2. 檢查 token + 取得解析出的資料
+        const me = await jwt.verify(token, SECRET);
+        // 3. 放進 context
+        return { me };
+      } catch (e) {
+        throw new Error('Your session expired. Sign in again.');
+      }
+    }
+    // 如果沒有 token 就回傳空的 context 出去
+    return {};
+  }
 });
 
 // 啟動 Server
