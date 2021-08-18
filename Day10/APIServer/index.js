@@ -132,6 +132,9 @@ const typeDefs = gql`
     # 3-2. Login - Schema
     "登入"
     login (email: String!, password: String!): Token
+    # 4-2. 檢查是否作者 isPostAuthor ?
+    "刪貼文"
+    deletePost(postId: ID!): Post
   } 
 `;
 
@@ -198,6 +201,19 @@ const isAuthenticated = resolverFunc => (parent, args, context) => {
   if (!context.me) throw new ForbiddenError('Not logged in.');
   return resolverFunc.apply(null, [parent, args, context]);
 };
+
+// 4-2. 檢查是否作者 isPostAuthor ?
+const deletePost = (postId) =>
+  posts.splice(posts.findIndex(post => post.id === postId), 1)[0];
+
+
+const isPostAuthor = resolverFunc => (parent, args, context) => {
+  const { postId } = args;
+  const { me } = context;
+  const isAuthor = findPostByPostId(postId).authorId === me.id;
+  if (!isAuthor) throw new ForbiddenError('Only Author Can Delete this Post');
+  return resolverFunc.applyFunc(parent, args, context);
+}
 
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
 const resolvers = {
@@ -287,7 +303,10 @@ const resolvers = {
 
       // 3. 成功則回傳 token
       return { token: await createToken(user) };
-    }
+    },
+    // 4-2. 檢查是否作者 isPostAuthor ?
+    deletePost: isAuthenticated(
+      isPostAuthor((root, { postId }, { me }) => deletePost(postId))),
   }
 };
 
