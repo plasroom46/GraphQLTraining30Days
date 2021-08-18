@@ -121,11 +121,19 @@ const typeDefs = gql`
     addPost(input: AddPostInput!): Post
     likePost(postId: ID!): Post
   }
-
-  # 3-1. Register - Schema
+  
+  # 3-2. Login - Schema
+  type Token {
+    token: String!
+  }
+  
   type Mutation {
+    # 3-1. Register - Schema
     "註冊。 email 與 passwrod 必填"
     signUp(name: String, email: String!, password: String!): User
+    # 3-2. Login - Schema
+    "登入"
+    login (email: String!, password: String!): Token
   }
 `;
 
@@ -182,6 +190,10 @@ const addUser = ({ name, email, password }) => (
   }
 );
 
+// 3-2. Login - Resolver
+const createToken = ({ id, email, name }) => jwt.sign({ id, email, name }, SECRET, {
+  expiresIn: '1d'
+});
 
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
 const resolvers = {
@@ -246,6 +258,8 @@ const resolvers = {
         likeGiverIds: post.likeGiverIds.filter(id => id === meId)
       });
     },
+  },
+  Mutation: {
     // 3-1. Register - Resolver
     signUp: async (root, { name, email, password }, context) => {
       // 1. 檢查不能有重複註冊 email
@@ -257,6 +271,19 @@ const resolvers = {
       // 3. 建立新 user
       return addUser({ name, email, password: hashedPassword });
     },
+    // 3-2. Login - Resolver
+    login: async (root, { email, password }, context) => {
+      // 1. 透過 email 找到相對應的 user
+      const user = users.find(user => user.email === email);
+      if (!user) throw new Error('Email Account Not Exists');
+
+      // 2. 將傳進來的 password 與資料庫存的 user.password 做比對
+      const passwordIsValid = await bcrypt.compare(password, user.password);
+      if (!passwordIsValid) throw new Error('Wrong Password');
+
+      // 3. 成功則回傳 token
+      return { token: await createToken(user) };
+    }
   }
 };
 
