@@ -58,7 +58,8 @@ const typeDefs = gql`
     "身高 (預設為 CENTIMETRE)"
     height(unit: HeightUnit = CENTIMETRE): Float
     "體重 (預設為 KILOGRAM)"
-    weight(unit: WeightUnit = KILOGRAM): Float
+    # 使用 Type System Directives 標示 Deprecated 
+    weight(unit: WeightUnit = KILOGRAM): Float @deprecated (reason: "It's secret")
     "朋友們"
     friends: [User]
     posts:[Post]
