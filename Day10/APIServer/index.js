@@ -1,3 +1,11 @@
+// 1-1. 使用 .env 檔案
+require('dotenv').config()
+
+// 定義 bcrypt 加密所需 saltRounds 次數
+const SALT_ROUNDS = Number(process.env.SALT_ROUNDS);
+// 定義 jwt 所需 secret (可隨便打)
+const SECRET = process.env.SECRET;
+
 // 4-1. 檢查有無認證 isAuthenticated
 const { ApolloServer, gql, ForbiddenError } = require('apollo-server');
 // ApolloServer: 讓我們啟動 server 的 class ，不但實作許多 GraphQL 功能也提供 web application 的功能 (背後使用 express)
@@ -143,11 +151,6 @@ const typeDefs = gql`
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
-// 定義 bcrypt 加密所需 saltRounds 次數
-const SALT_ROUNDS = 2;
-// 定義 jwt 所需 secret (可隨便打)
-const SECRET = 'just_a_random_secret';
-
 
 // helper functions
 const filterPostsByUserId = userId =>
@@ -180,7 +183,6 @@ const updatePost = (postId, data) =>
   Object.assign(findPostByPostId(postId), data);
 
 // 3-1. Register - Resolver
-const hash = text => bcrypt.hash(text, SALT_ROUNDS);
 
 const addUser = ({ name, email, password }) => (
   users[users.length] = {
@@ -192,9 +194,7 @@ const addUser = ({ name, email, password }) => (
 );
 
 // 3-2. Login - Resolver
-const createToken = ({ id, email, name }) => jwt.sign({ id, email, name }, SECRET, {
-  expiresIn: '1d'
-});
+
 
 // 4-1. 檢查有無認證 isAuthenticated
 const isAuthenticated = resolverFunc => (parent, args, context) => {
@@ -214,6 +214,13 @@ const isPostAuthor = resolverFunc => (parent, args, context) => {
   if (!isAuthor) throw new ForbiddenError('Only Author Can Delete this Post');
   return resolverFunc.applyFunc(parent, args, context);
 }
+
+// 1-2. 將環境變數加入 context 中
+const hash = (text, saltRounds) => bcrypt.hash(text, saltRounds)
+const createToken = ({ id, email, name }, secret) =>
+  jwt.sign({ id, email, name }, secret, {
+    expiresIn: '1d'
+  })
 
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
 const resolvers = {
@@ -281,18 +288,18 @@ const resolvers = {
       });
     }),
     // 3-1. Register - Resolver
-    signUp: async (root, { name, email, password }, context) => {
+    signUp: async (root, { name, email, password }, { saltRounds }) => {
       // 1. 檢查不能有重複註冊 email
       const isUserEmailDuplicate = users.some(user => user.email === email);
       if (isUserEmailDuplicate) throw new Error('User Email Duplicate');
 
       // 2. 將 passwrod 加密再存進去。非常重要 !!
-      const hashedPassword = await hash(password, SALT_ROUNDS);
+      const hashedPassword = await hash(password, saltRounds)
       // 3. 建立新 user
       return addUser({ name, email, password: hashedPassword });
     },
     // 3-2. Login - Resolver
-    login: async (root, { email, password }, context) => {
+    login: async (root, { email, password }, { secret }) => {
       // 1. 透過 email 找到相對應的 user
       const user = users.find(user => user.email === email);
       if (!user) throw new Error('Email Account Not Exists');
@@ -302,7 +309,7 @@ const resolvers = {
       if (!passwordIsValid) throw new Error('Wrong Password');
 
       // 3. 成功則回傳 token
-      return { token: await createToken(user) };
+      return { token: await createToken(user, secret) }
     },
     // 4-2. 檢查是否作者 isPostAuthor ?
     deletePost: isAuthenticated(
@@ -320,19 +327,20 @@ const server = new ApolloServer({
   // 3-3. Context Setup
   context: async ({ req }) => {
     // 1. 取出
+    const context = { secret: SECRET, saltRounds: SALT_ROUNDS };
     const token = req.headers['x-token'];
     if (token) {
       try {
         // 2. 檢查 token + 取得解析出的資料
         const me = await jwt.verify(token, SECRET);
         // 3. 放進 context
-        return { me };
+        return { ...context,me };
       } catch (e) {
         throw new Error('Your session expired. Sign in again.');
       }
     }
     // 如果沒有 token 就回傳空的 context 出去
-    return {};
+    return context;
   }
 });
 
