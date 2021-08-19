@@ -2,50 +2,25 @@ const { ApolloServer, gql } = require('apollo-server');
 // ApolloServer: 讓我們啟動 server 的 class ，不但實作許多 GraphQL 功能也提供 web application 的功能 (背後使用 express)
 // gql: template literal tag, 讓你在 Javascript 中使用 GraphQL 語法
 
-const { GraphQLScalarType } = require('graphql');
-const { Kind } = require('graphql/language');
+// 2-1. 引入外部套件
+const { DateTime } = require('@okgrow/graphql-scalars');
 
 // GraphQL Schema 定義
 const typeDefs = gql`
+scalar DateTime
 
-"""
-日期格式。顯示時以 Unix Timestamp in Milliseconds 呈現。
-"""
-scalar Date
-
-# 宣告後就可以在底下直接使用
 type Query {
   # 獲取現在時間
-  now: Date
+  now: DateTime
   # 詢問日期是否為週五... TGIF!!
-  isFriday(date: Date!): Boolean
+  isFriday(date: DateTime!): Boolean
 }
 `;
 
 
+
 const resolvers = {
-  Date: new GraphQLScalarType({
-    name: 'Date',
-    description: 'Date custom scalar type',
-    serialize(value) {
-      // value sent to the client
-      // 輸出到前端
-      return value.getTime();
-    },
-    parseValue(value) {
-      // value from the client (variables)
-      // 從前端 variables 進來的 input
-      return new Date(value);
-    },
-    parseLiteral(ast) {
-      // value from the client (inline)
-      // 從前端 inline variables 進來的 input
-      if (ast.kind === Kind.INT) {
-        return new Date(parseInt(ast.value, 10)); // ast value is always in string format
-      }
-      return null;
-    }
-  }),
+  DateTime,
   Query: {
     now: () => new Date(),
     isFriday: (root, { date }) => date.getDay() === 5
