@@ -4,17 +4,57 @@ const { ApolloServer, gql } = require('apollo-server');
 
 // GraphQL Schema 定義
 const typeDefs = gql`
+interface Animal {
+    name: String
+  }
+  
+  type Bird implements Animal {
+    name: String
+    "翅膀展開長度"
+    wingSpanLength: Int
+  }
+  
+  type Monkey implements Animal {
+    name: String
+    "手臂展開長度"
+    armSpanLength: Int
+  }
+  
   type Query {
-    "A simple type for getting started!"
-    hello: String
+    animal(name: String): Animal
+    animals: [Animal]
   }
 `;
 
+const animals = [
+    { name: 'Chiken Litte', wingSpanLength: 10 },
+    { name: 'Goku', armSpanLength: 20 },
+    { name: 'King Kong', armSpanLength: 200 }
+  ];
+
+
+
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
 const resolvers = {
+  Animal: {
+    // 一定要實作這一個特殊 field
+    __resolveType(obj, context, info) {
+      // obj 為該 field 得到的資料
+      if (obj.wingSpanLength) {
+        // 回傳相對應得 Object type 名稱
+        return 'Bird';
+      }
+
+      if (obj.armSpanLength) {
+        return 'Monkey';
+      }
+
+      return null;
+    }
+  },
   Query: {
-    // 需注意名稱一定要對到 Schema 中 field 的名稱
-    hello: () => 'world'
+    animal: (root, { name }) => animals.find(animal => animal.name === name),
+    animals: () => animals
   }
 };
 
