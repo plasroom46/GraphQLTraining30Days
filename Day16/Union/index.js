@@ -4,18 +4,48 @@ const { ApolloServer, gql } = require('apollo-server');
 
 // GraphQL Schema 定義
 const typeDefs = gql`
-  type Query {
-    "A simple type for getting started!"
-    hello: String
-  }
+union Result = Book | Author
+
+type Book {
+  title: String
+}
+
+type Author {
+  name: String
+}
+
+type Query {
+  search(contains: String!): [Result]
+}
 `;
 
 // Resolvers 是一個會對照 Schema 中 field 的 function map ，讓你可以計算並回傳資料給 GraphQL Server
+const authors = [{ name: 'John' }, { name: 'Mary' }];
+const books = [{ title: 'Journey to the West' }, { title: 'Mary Loves Me' }]
 const resolvers = {
+  Result: {
+    // 一定要實作這一個特殊 field
+    __resolveType(obj, context, info){
+      // obj 為該 field 得到的資料
+      if(obj.name){
+        // 回傳相對應得 Object type 名稱
+        return 'Author';
+      }
+
+      if(obj.title){
+        return 'Book';
+      }
+
+      return null;
+    },
+  },
   Query: {
-    // 需注意名稱一定要對到 Schema 中 field 的名稱
-    hello: () => 'world'
-  }
+    search: (root, { contains }) =>
+    [
+      ...authors.filter(author => author.name.includes(contains)),
+      ...books.filter(book => book.title.includes(contains))
+    ]
+  },
 };
 
 // 初始化 Web Server ，需傳入 typeDefs (Schema) 與 resolvers (Resolver)
